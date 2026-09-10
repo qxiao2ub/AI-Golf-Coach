@@ -1,0 +1,10 @@
+AI-Based Golf Coach GitHub Repository
+
+Author: Isaiah Goh
+Mentor: Dr. Qingyang Xiao
+Streamlit entry point: streamlit_app.py
+Recommended deployment Python: 3.12
+
+Repository contents include the Streamlit app, modular analysis code, original Colab notebook,
+dependency files, Streamlit configuration, deployment documentation, tests, GitHub Actions CI,
+model card, security notes, citation metadata, and MIT license.
