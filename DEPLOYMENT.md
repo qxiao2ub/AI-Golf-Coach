@@ -1,47 +1,63 @@
-# Deploy on Streamlit Community Cloud
+# Streamlit Community Cloud Deployment
 
-## 1. Create the GitHub repository
+## Recommended clean deployment
 
-1. Extract the ZIP archive.
-2. Create a new GitHub repository, for example `isaiah-goh-ai-golf-coach`.
-3. Upload **the contents of the extracted folder** so `streamlit_app.py` and `requirements.txt` are at the repository root.
-4. Commit and push to the `main` branch.
+The safest method is to create a new GitHub repository from this ZIP. This prevents the old heavy dependency files from remaining in Git history or the repository root.
 
-## 2. Deploy
+1. Extract the ZIP.
+2. Open the extracted folder.
+3. Verify these two files are absent:
+   - `requirements.txt`
+   - `packages.txt`
+4. Push all repository contents to the root of a GitHub repository.
+5. Open Streamlit Community Cloud and create an app.
+6. Select `streamlit_app.py` as the main file.
+7. Deploy.
 
-1. Sign in to Streamlit Community Cloud.
-2. Select **Create app**.
-3. Choose the GitHub repository and `main` branch.
-4. Set the entry point to `streamlit_app.py`.
-5. Open **Advanced settings** and select **Python 3.12**.
-6. Deploy.
+## Updating the existing `ai-golf-coach` repository
 
-The repository provides:
+Delete the old repository contents before copying this edition. In particular, remove:
 
-- `requirements.txt` for Python dependencies
-- `packages.txt` for FFmpeg and Linux runtime libraries
-- `.streamlit/config.toml` for upload and theme settings
-- `.python-version` documenting the tested deployment target
+- `requirements.txt`
+- `packages.txt`
+- `.python-version`
+- the old `golf_coach/` server-side package
+- any server-side MediaPipe/OpenCV model cache
 
-## 3. First launch checks
+Commit the deletion and the new files together. Streamlit should trigger a clean redeploy. Use **Manage app → Reboot app** after the commit is visible on GitHub.
 
-Run **Synthetic demo** first. It verifies the complete scoring, reporting, ML/DNN, coaching, RL, and download pipeline without requiring MediaPipe inference on a personal video.
+## When the existing app still shows the old build
 
-Then upload a short, face-on golf swing. Keep the full body visible and use a stationary camera. The app analyzes up to the configured duration and samples frames to stay within shared cloud resources.
+Python itself is selected when the Community Cloud app is deployed. A repository file cannot reliably change the Python interpreter of an already-created app. This fast edition supports current Streamlit Cloud Python versions because it has no compiled Python AI dependencies. However, if the old environment remains stuck:
+
+1. Record the current app URL and secrets.
+2. Delete the Streamlit app from the workspace.
+3. Create it again from the new repository.
+4. Use `streamlit_app.py` as the entry point.
+5. Reuse the prior custom subdomain if desired.
+
+## Expected startup behavior
+
+- There should be no long Debian/apt installation stage.
+- There should be no MediaPipe or OpenCV wheel installation stage.
+- The Streamlit page should appear first.
+- The pose model downloads only after a visitor clicks **Initialize pose AI** or **Analyze selected video**.
+- If CDN/model access fails, the page remains functional through motion fallback and synthetic demo mode.
 
 ## Troubleshooting
 
-### MediaPipe build or import failure
+### Page loads, but pose initialization fails
 
-- Confirm that Streamlit is using Python 3.12.
-- Confirm `mediapipe==0.10.35` appears in the build log.
-- Reboot the app after dependency changes.
-- The synthetic demo remains available even when uploaded-video pose inference is unavailable.
+This usually means the browser or network blocked the MediaPipe CDN/model. The app automatically switches to motion fallback. Try Chrome or Edge, disable strict content blocking for the app domain, and retry.
 
-### Video cannot be displayed
+### Video cannot be decoded
 
-Check that `packages.txt` was detected and FFmpeg was installed. The app attempts H.264 conversion and falls back to the OpenCV-generated MP4 when necessary.
+Convert the file to MP4 using H.264 video. Browser support for WMV, AVI, and HEVC varies by operating system and browser.
 
-### App exceeds resource limits
+### The embedded studio is too short
 
-Use a shorter clip, raise the frame stride, lower the maximum analyzed seconds, or use the synthetic demo.
+Increase the `height` argument in `components.html(...)` inside `streamlit_app.py`.
+
+### GitHub still contains old dependency files
+
+Delete them in GitHub and commit the deletion. Simply uploading new files does not remove old files.

@@ -1,10 +1,13 @@
 cff-version: 1.2.0
-message: "Please cite this project as an educational prototype created by Isaiah Goh under the mentorship of Dr. Qingyang Xiao."
-title: "AI-Based Golf Coach"
+message: "If you use this educational prototype, please cite the project."
+title: "AI-Based Golf Coach — Fast Streamlit Cloud Edition"
 type: software
 authors:
   - family-names: "Goh"
     given-names: "Isaiah"
-version: 1.0.0
-date-released: 2026-08-05
+  - family-names: "Xiao"
+    given-names: "Qingyang"
+    name-suffix: "Ph.D."
+version: "2.0.0"
+date-released: "2026-09-23"
 license: MIT

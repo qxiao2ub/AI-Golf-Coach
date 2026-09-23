@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Golf Coach Browser Studio</title>
+<style>
+  :root {
+    --green: #0f5d42;
+    --green-2: #197452;
+    --green-soft: #edf8f2;
+    --gold: #c7942f;
+    --ink: #18332b;
+    --muted: #607069;
+    --line: #dce9e2;
+    --danger: #a73d3d;
+    --blue: #2b6cb0;
+    --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: #fff;
+  }
+  .app { padding: 4px 4px 32px; }
+  .topbar {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+    padding: 18px; border: 1px solid var(--line); border-radius: 18px;
+    background: linear-gradient(130deg, #f0faf4, #fff 70%, #fff8e8);
+  }
+  .eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .08em; color: var(--green); }
+  h1 { margin: 5px 0 4px; font-size: 26px; line-height: 1.15; }
+  .sub { color: var(--muted); font-size: 14px; line-height: 1.45; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px;
+    border-radius: 999px; background: #eaf7ef; color: var(--green); border: 1px solid #cce6d7;
+    font-size: 12px; font-weight: 750; white-space: nowrap;
+  }
+  .grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 14px; margin-top: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 18px; }
+  .card h3 { margin: 0 0 10px; font-size: 15px; }
+  .fields { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+  label { display: block; font-size: 12px; font-weight: 750; color: #3b5149; margin-bottom: 5px; }
+  input, select, button, textarea { font: inherit; }
+  input[type="text"], input[type="number"], input[type="file"], select {
+    width: 100%; padding: 10px 11px; border: 1px solid #cfded6; border-radius: 10px; background: white; color: var(--ink);
+  }
+  input[type="range"] { width: 100%; accent-color: var(--green); }
+  .range-row { display: grid; grid-template-columns: 1fr 58px; gap: 10px; align-items: center; }
+  .range-value { text-align: center; padding: 7px; background: #f3f7f5; border-radius: 8px; font-size: 13px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 12px; }
+  button, .download-link {
+    border: 0; border-radius: 10px; padding: 10px 13px; cursor: pointer;
+    font-weight: 750; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  }
+  button.primary { background: var(--green); color: white; }
+  button.secondary, .download-link { background: #edf7f1; color: var(--green); border: 1px solid #cbe4d5; }
+  button.ghost { background: #f5f7f6; color: #3a5148; border: 1px solid #dce5e0; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .status { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: #f4f7f5; color: #486057; font-size: 13px; line-height: 1.4; }
+  .status.good { background: #edf9f1; color: #1f6b45; }
+  .status.warn { background: #fff8e3; color: #735b16; }
+  .status.bad { background: #fff0f0; color: var(--danger); }
+  progress { width: 100%; height: 10px; margin-top: 9px; accent-color: var(--green); }
+  .privacy { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+  .viewer {
+    position: relative; min-height: 360px; border-radius: 14px; overflow: hidden;
+    background: radial-gradient(circle at 50% 40%, #eef5f1, #dce8e1);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #sourceVideo { width: 100%; max-height: 520px; display: block; background: #111; }
+  #overlayCanvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .viewer-placeholder { text-align: center; color: #607069; padding: 50px 25px; }
+  .viewer-placeholder .icon { font-size: 52px; }
+  .engine-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .engine-pill { font-size: 12px; padding: 6px 9px; border-radius: 999px; background: #f3f7f5; border: 1px solid #dce8e2; }
+  #results { margin-top: 14px; display: none; }
+  .score-row { display: grid; grid-template-columns: 170px 1fr; gap: 14px; }
+  .overall {
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    min-height: 155px; border-radius: 16px; color: white; background: linear-gradient(145deg, #0f5d42, #25805d);
+  }
+  .overall .number { font-size: 54px; line-height: 1; font-weight: 850; }
+  .overall .label { font-size: 13px; opacity: .9; margin-top: 4px; }
+  .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .metric { border: 1px solid var(--line); border-radius: 13px; padding: 12px; background: #fbfdfc; }
+  .metric .name { font-size: 12px; color: var(--muted); }
+  .metric .value { font-size: 24px; font-weight: 820; margin-top: 2px; }
+  .metric .detail { font-size: 11px; color: #728078; margin-top: 3px; min-height: 30px; }
+  .bar { height: 6px; border-radius: 999px; background: #e5eee9; margin-top: 9px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--green-2); border-radius: 999px; }
+  .result-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 14px; margin-top: 14px; }
+  .chart-wrap { width: 100%; min-height: 270px; }
+  #metricChart { width: 100%; height: 270px; display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 8px 7px; border-bottom: 1px solid #e5ede9; text-align: left; }
+  th { color: #41574f; background: #f5f8f6; }
+  .advice-list { display: grid; gap: 9px; }
+  .advice {
+    border: 1px solid var(--line); border-radius: 12px; padding: 11px; background: #fbfdfc;
+  }
+  .advice-title { font-weight: 800; font-size: 13px; }
+  .advice-body { color: #566860; font-size: 12px; margin-top: 4px; line-height: 1.45; }
+  .feedback { display: flex; gap: 6px; margin-top: 8px; }
+  .feedback button { padding: 5px 8px; font-size: 12px; background: #f0f5f2; color: #385047; border: 1px solid #d9e5df; }
+  .plan { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
+  .week { padding: 11px; border-radius: 12px; background: #f6faf8; border: 1px solid #dfeae5; }
+  .week strong { font-size: 13px; }
+  .week div { font-size: 12px; color: #5a6c64; margin-top: 4px; line-height: 1.45; }
+  .fineprint { font-size: 11px; color: #728078; line-height: 1.45; margin-top: 10px; }
+  #processingCanvas { display: none; }
+  .download-area { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .record-note { font-size: 11px; color: #697970; margin-top: 8px; }
+  @media (max-width: 900px) {
+    .grid, .result-grid, .score-row { grid-template-columns: 1fr; }
+    .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 560px) {
+    .fields, .metric-grid, .plan { grid-template-columns: 1fr; }
+    .topbar { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="topbar">
+    <div>
+      <div class="eyebrow">ON-DEVICE VIDEO INTELLIGENCE</div>
+      <h1>Golf Swing Pose & Motion Studio</h1>
+      <div class="sub">Analyze a locally selected clip, visualize body landmarks and angles, segment swing phases, and generate an interpretable coaching report.</div>
+    </div>
+    <div class="badge">🔒 Video stays in this browser</div>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>1. Golfer and video</h2>
+      <div class="fields">
+        <div>
+          <label for="golferName">Golfer name</label>
+          <input id="golferName" type="text" value="Demo Golfer" maxlength="80" />
+        </div>
+        <div>
+          <label for="handedness">Handedness</label>
+          <select id="handedness"><option>Right-handed</option><option>Left-handed</option></select>
+        </div>
+        <div>
+          <label for="experience">Experience</label>
+          <select id="experience"><option>Beginner</option><option selected>Intermediate</option><option>Advanced</option></select>
+        </div>
+        <div>
+          <label for="goal">Primary goal</label>
+          <select id="goal">
+            <option>Improve swing consistency</option><option>Improve balance</option><option>Improve tempo</option>
+            <option>Improve rotation</option><option>Improve posture</option><option>General practice</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <label for="videoFile">Select a golf video</label>
+        <input id="videoFile" type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.m4v" />
+      </div>
+      <div class="fields" style="margin-top:10px">
+        <div>
+          <label for="sampleCount">Sampled frames</label>
+          <div class="range-row"><input id="sampleCount" type="range" min="24" max="100" step="4" value="48" /><span id="sampleValue" class="range-value">48</span></div>
+        </div>
+        <div>
+          <label for="maxSeconds">Maximum analyzed seconds</label>
+          <div class="range-row"><input id="maxSeconds" type="range" min="5" max="30" step="1" value="18" /><span id="secondsValue" class="range-value">18 s</span></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="initButton" class="secondary">⚙️ Initialize pose AI</button>
+        <button id="analyzeButton" class="primary">▶ Analyze selected video</button>
+        <button id="demoButton" class="ghost">✨ Run synthetic demo</button>
+        <button id="resetButton" class="ghost">↺ Reset</button>
+      </div>
+      <div id="status" class="status">Ready. Run the synthetic demo immediately, or select a browser-playable MP4/WebM/MOV clip.</div>
+      <progress id="progress" value="0" max="1"></progress>
+      <div class="privacy">The pose model is downloaded from the MediaPipe CDN when initialized. The selected video is decoded and analyzed locally in the browser and is not posted to the Streamlit Python server.</div>
+    </section>
+
+    <section class="card">
+      <h2>2. Video and annotation</h2>
+      <div id="viewer" class="viewer">
+        <div id="viewerPlaceholder" class="viewer-placeholder"><div class="icon">🏌️</div><div>Select a video or run the synthetic demo.</div></div>
+        <video id="sourceVideo" controls muted playsinline style="display:none"></video>
+        <canvas id="overlayCanvas"></canvas>
+      </div>
+      <canvas id="processingCanvas" width="160" height="90"></canvas>
+      <div class="engine-strip">
+        <span id="enginePill" class="engine-pill">Engine: not initialized</span>
+        <span id="durationPill" class="engine-pill">Duration: —</span>
+        <span id="coveragePill" class="engine-pill">Pose coverage: —</span>
+      </div>
+    </section>
+  </div>
+
+  <section id="results">
+    <div class="score-row">
+      <div class="overall"><div id="overallScore" class="number">—</div><div class="label">transparent overall score</div><div id="engineLabel" class="label"></div></div>
+      <div id="metricGrid" class="metric-grid"></div>
+    </div>
+
+    <div class="result-grid">
+      <section class="card">
+        <h2>Movement timeline</h2>
+        <div class="chart-wrap"><canvas id="metricChart"></canvas></div>
+        <div class="fineprint">The chart shows normalized hand speed (pose mode) or motion energy (fallback mode), along with the detected swing phases.</div>
+      </section>
+      <section class="card">
+        <h2>Swing phases</h2>
+        <div style="overflow:auto"><table><thead><tr><th>Phase</th><th>Start</th><th>End</th><th>Frames</th></tr></thead><tbody id="phaseTable"></tbody></table></div>
+      </section>
+    </div>
+
+    <div class="result-grid">
+      <section class="card">
+        <h2>AI coach suggestions</h2>
+        <div id="adviceList" class="advice-list"></div>
+        <div class="fineprint">Thumbs-up/down feedback updates a small contextual-bandit preference score stored in this browser. It does not retrain MediaPipe.</div>
+      </section>
+      <section class="card">
+        <h2>Four-week practice direction</h2>
+        <div id="practicePlan" class="plan"></div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top:14px">
+      <h2>Downloads</h2>
+      <div class="download-area">
+        <button id="jsonButton" class="secondary">⬇ Report JSON</button>
+        <button id="csvButton" class="secondary">⬇ Frame metrics CSV</button>
+        <button id="pngButton" class="secondary">⬇ Annotated frame PNG</button>
+        <button id="recordButton" class="secondary" disabled>🎬 Create annotated WebM</button>
+        <a id="videoDownload" class="download-link" style="display:none">⬇ Download annotated WebM</a>
+      </div>
+      <div id="recordStatus" class="record-note">Annotated WebM is created by recording the browser canvas in real time. It is available after a real video analysis in supported browsers.</div>
+    </section>
+  </section>
+
+  <div class="fineprint" style="margin-top:14px">Author: {{AUTHOR}} · Mentor: {{MENTOR}} · Educational prototype only. Joint angles are 2D image-plane estimates and can be affected by camera perspective, occlusion, clothing, lighting, and video quality.</div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const AUTHOR = "{{AUTHOR}}";
+  const MENTOR = "{{MENTOR}}";
+  const MP_VERSION = "1.0.1";
+  const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+  const MODULE_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/+esm`;
+  const WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/wasm`;
+
+  const $ = (id) => document.getElementById(id);
+  const video = $("sourceVideo");
+  const overlay = $("overlayCanvas");
+  const octx = overlay.getContext("2d");
+  const processCanvas = $("processingCanvas");
+  const pctx = processCanvas.getContext("2d", { willReadFrequently: true });
+
+  const state = {
+    objectUrl: null,
+    file: null,
+    poseLandmarker: null,
+    PoseLandmarkerClass: null,
+    engine: "not initialized",
+    delegate: null,
+    result: null,
+    analysisDuration: 0,
+    lastRenderedRecord: null,
+    recording: false,
+  };
+
+  const POSE = {
+    NOSE: 0, LEFT_SHOULDER: 11, RIGHT_SHOULDER: 12,
+    LEFT_ELBOW: 13, RIGHT_ELBOW: 14, LEFT_WRIST: 15, RIGHT_WRIST: 16,
+    LEFT_HIP: 23, RIGHT_HIP: 24, LEFT_KNEE: 25, RIGHT_KNEE: 26,
+    LEFT_ANKLE: 27, RIGHT_ANKLE: 28,
+  };
+
+  const CONNECTIONS = [
+    [0,1],[1,2],[2,3],[3,7],[0,4],[4,5],[5,6],[6,8],[9,10],
+    [11,12],[11,13],[13,15],[15,17],[15,19],[15,21],[17,19],
+    [12,14],[14,16],[16,18],[16,20],[16,22],[18,20],
+    [11,23],[12,24],[23,24],[23,25],[25,27],[27,29],[29,31],[27,31],
+    [24,26],[26,28],[28,30],[30,32],[28,32]
+  ];
+
+  function setStatus(message, kind = "") {
+    const el = $("status");
+    el.textContent = message;
+    el.className = `status ${kind}`.trim();
+  }
+
+  function setProgress(value) {
+    $("progress").value = Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+  function finite(x, fallback = 0) { return Number.isFinite(x) ? x : fallback; }
+  function mean(values, fallback = 0) {
+    const clean = values.filter(Number.isFinite);
+    return clean.length ? clean.reduce((a,b) => a+b, 0) / clean.length : fallback;
+  }
+  function maxValue(values, fallback = 0) {
+    const clean = values.filter(Number.isFinite);
+    return clean.length ? Math.max(...clean) : fallback;
+  }
+  function standardDeviation(values) {
+    const clean = values.filter(Number.isFinite);
+    if (clean.length < 2) return 0;
+    const m = mean(clean);
+    return Math.sqrt(mean(clean.map(v => (v-m) ** 2)));
+  }
+  function point(landmarks, index) {
+    const p = landmarks[index];
+    return p ? { x: Number(p.x), y: Number(p.y), z: Number(p.z || 0), visibility: Number(p.visibility ?? p.presence ?? 1) } : null;
+  }
+  function mid(a, b) { return { x: (a.x+b.x)/2, y: (a.y+b.y)/2, z: ((a.z||0)+(b.z||0))/2 }; }
+  function dist(a, b) { return Math.hypot(a.x-b.x, a.y-b.y); }
+  function angle3(a, b, c) {
+    const v1 = {x:a.x-b.x, y:a.y-b.y};
+    const v2 = {x:c.x-b.x, y:c.y-b.y};
+    const denom = Math.hypot(v1.x,v1.y) * Math.hypot(v2.x,v2.y);
+    if (!denom) return NaN;
+    const cosine = clamp((v1.x*v2.x + v1.y*v2.y) / denom, -1, 1);
+    return Math.acos(cosine) * 180 / Math.PI;
+  }
+  function lineAngle(a, b) { return Math.atan2(b.y-a.y, b.x-a.x) * 180 / Math.PI; }
+  function orientationDifference(a, b) {
+    let d = Math.abs(a-b) % 180;
+    if (d > 90) d = 180-d;
+    return d;
+  }
+  function torsoTilt(shoulderCenter, hipCenter) {
+    return Math.atan2(Math.abs(shoulderCenter.x-hipCenter.x), Math.abs(shoulderCenter.y-hipCenter.y) || 1e-9) * 180 / Math.PI;
+  }
+  function bandScore(value, idealLow, idealHigh, outerLow, outerHigh) {
+    if (!Number.isFinite(value)) return 0;
+    if (value >= idealLow && value <= idealHigh) return 100;
+    if (value < idealLow) return 100 * clamp((value-outerLow)/(idealLow-outerLow || 1), 0, 1);
+    return 100 * clamp((outerHigh-value)/(outerHigh-idealHigh || 1), 0, 1);
+  }
+  function lowGood(value, idealHigh, outerHigh) {
+    if (!Number.isFinite(value)) return 0;
+    if (value <= idealHigh) return 100;
+    return 100 * clamp((outerHigh-value)/(outerHigh-idealHigh || 1), 0, 1);
+  }
+
+  async function initializePoseEngine(force = false) {
+    if (state.poseLandmarker && !force) return true;
+    $("initButton").disabled = true;
+    setStatus("Downloading and initializing the browser pose model…", "warn");
+    setProgress(0.12);
+    try {
+      if (state.poseLandmarker && typeof state.poseLandmarker.close === "function") {
+        try { state.poseLandmarker.close(); } catch (_) {}
+      }
+      const mp = await import(MODULE_URL);
+      const FilesetResolver = mp.FilesetResolver;
+      const PoseLandmarker = mp.PoseLandmarker;
+      if (!FilesetResolver || !PoseLandmarker) throw new Error("MediaPipe module did not expose the expected APIs.");
+      setProgress(0.32);
+      const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+      setProgress(0.52);
+      let landmarker = null;
+      let delegate = "CPU";
+      try {
+        landmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+          runningMode: "VIDEO", numPoses: 1,
+          minPoseDetectionConfidence: 0.45,
+          minPosePresenceConfidence: 0.45,
+          minTrackingConfidence: 0.45,
+          outputSegmentationMasks: false,
+        });
+        delegate = "GPU";
+      } catch (gpuError) {
+        landmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+          runningMode: "VIDEO", numPoses: 1,
+          minPoseDetectionConfidence: 0.45,
+          minPosePresenceConfidence: 0.45,
+          minTrackingConfidence: 0.45,
+          outputSegmentationMasks: false,
+        });
+        delegate = "CPU";
+      }
+      state.poseLandmarker = landmarker;
+      state.PoseLandmarkerClass = PoseLandmarker;
+      state.engine = "MediaPipe Pose Landmarker";
+      state.delegate = delegate;
+      $("enginePill").textContent = `Engine: pose landmarks (${delegate})`;
+      setStatus(`Pose AI is ready (${delegate}). Select a video and start analysis.`, "good");
+      setProgress(1);
+      return true;
+    } catch (error) {
+      console.warn("Pose initialization failed; motion fallback remains available.", error);
+      state.poseLandmarker = null;
+      state.engine = "Native browser motion fallback";
+      state.delegate = null;
+      $("enginePill").textContent = "Engine: motion fallback";
+      setStatus(`Pose model could not load (${error.message || error}). Video analysis will use the built-in motion fallback.`, "warn");
+      setProgress(0);
+      return false;
+    } finally {
+      $("initButton").disabled = false;
+    }
+  }
+
+  function waitForEvent(target, name, timeoutMs = 8000) {
+    return new Promise((resolve, reject) => {
+      let timer = null;
+      const done = (event) => { cleanup(); resolve(event); };
+      const fail = () => { cleanup(); reject(new Error(`Timed out waiting for ${name}.`)); };
+      const cleanup = () => { target.removeEventListener(name, done); if (timer) clearTimeout(timer); };
+      target.addEventListener(name, done, { once: true });
+      timer = setTimeout(fail, timeoutMs);
+    });
+  }
+
+  async function loadSelectedVideo(file) {
+    if (!file) throw new Error("Choose a video file first.");
+    if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
+    state.objectUrl = URL.createObjectURL(file);
+    state.file = file;
+    video.src = state.objectUrl;
+    video.style.display = "block";
+    $("viewerPlaceholder").style.display = "none";
+    video.load();
+    if (video.readyState < 1) await waitForEvent(video, "loadedmetadata", 12000);
+    if (!Number.isFinite(video.duration) || video.duration <= 0) {
+      throw new Error("The browser could not decode this video. MP4/H.264 or WebM is recommended.");
+    }
+    resizeOverlay();
+    $("durationPill").textContent = `Duration: ${video.duration.toFixed(1)} s`;
+  }
+
+  function resizeOverlay() {
+    const width = video.videoWidth || 960;
+    const height = video.videoHeight || 540;
+    overlay.width = width;
+    overlay.height = height;
+    overlay.style.width = "100%";
+    overlay.style.height = "100%";
+  }
+
+  async function seekTo(time) {
+    const safeTime = clamp(time, 0, Math.max(0, video.duration - 0.03));
+    if (Math.abs(video.currentTime - safeTime) < 0.015 && video.readyState >= 2) return;
+    const promise = waitForEvent(video, "seeked", 8000);
+    video.currentTime = safeTime;
+    await promise;
+  }
+
+  function extractPoseFeature(landmarks, time, index, baseline) {
+    const ls = point(landmarks, POSE.LEFT_SHOULDER), rs = point(landmarks, POSE.RIGHT_SHOULDER);
+    const le = point(landmarks, POSE.LEFT_ELBOW), re = point(landmarks, POSE.RIGHT_ELBOW);
+    const lw = point(landmarks, POSE.LEFT_WRIST), rw = point(landmarks, POSE.RIGHT_WRIST);
+    const lh = point(landmarks, POSE.LEFT_HIP), rh = point(landmarks, POSE.RIGHT_HIP);
+    const lk = point(landmarks, POSE.LEFT_KNEE), rk = point(landmarks, POSE.RIGHT_KNEE);
+    const la = point(landmarks, POSE.LEFT_ANKLE), ra = point(landmarks, POSE.RIGHT_ANKLE);
+    const nose = point(landmarks, POSE.NOSE);
+    const required = [ls,rs,le,re,lw,rw,lh,rh,lk,rk,la,ra,nose];
+    if (required.some(v => !v || !Number.isFinite(v.x) || !Number.isFinite(v.y))) return null;
+    const shoulderCenter = mid(ls,rs), hipCenter = mid(lh,rh), handCenter = mid(lw,rw);
+    const shoulderWidth = Math.max(dist(ls,rs), 1e-4);
+    if (!baseline.shoulderCenter) {
+      baseline.shoulderCenter = shoulderCenter;
+      baseline.hipCenter = hipCenter;
+      baseline.head = nose;
+      baseline.shoulderWidth = shoulderWidth;
+    }
+    const visibility = mean(required.map(v => finite(v.visibility, 1)), 1);
+    return {
+      index, time, landmarks,
+      detected: true,
+      leftElbow: angle3(ls,le,lw), rightElbow: angle3(rs,re,rw),
+      leftKnee: angle3(lh,lk,la), rightKnee: angle3(rh,rk,ra),
+      torsoTilt: torsoTilt(shoulderCenter,hipCenter),
+      shoulderAngle: lineAngle(ls,rs), hipAngle: lineAngle(lh,rh),
+      separation: orientationDifference(lineAngle(ls,rs), lineAngle(lh,rh)),
+      hipSway: dist(hipCenter,baseline.hipCenter)/Math.max(baseline.shoulderWidth,1e-4),
+      headMotion: dist(nose,baseline.head)/Math.max(baseline.shoulderWidth,1e-4),
+      handX: handCenter.x, handY: handCenter.y,
+      shoulderWidth, visibility,
+      motionValue: 0,
+    };
+  }
+
+  function calculateMotionFeature(time, index, motionState) {
+    const w = processCanvas.width, h = processCanvas.height;
+    pctx.drawImage(video, 0, 0, w, h);
+    const data = pctx.getImageData(0,0,w,h).data;
+    const gray = new Uint8Array(w*h);
+    let total = 0, wx = 0, wy = 0, count = 0;
+    for (let i=0,p=0; i<data.length; i+=4,p++) {
+      gray[p] = Math.round(0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2]);
+      if (motionState.previous) {
+        const d = Math.abs(gray[p]-motionState.previous[p]);
+        total += d;
+        if (d > 18) { const x = p % w, y = Math.floor(p/w); wx += x*d; wy += y*d; count += d; }
+      }
+    }
+    motionState.previous = gray;
+    const energy = total / (w*h*255);
+    const cx = count ? (wx/count)/w : motionState.lastX ?? .5;
+    const cy = count ? (wy/count)/h : motionState.lastY ?? .5;
+    motionState.lastX = cx; motionState.lastY = cy;
+    return { index, time, landmarks:null, detected:true, motionValue:energy, handX:cx, handY:cy, visibility:1 };
+  }
+
+  function addSpeeds(records) {
+    let prev = null;
+    records.forEach(r => {
+      if (!r || !r.detected) return;
+      if (!prev) { r.handSpeed = 0; r.acceleration = 0; prev = r; return; }
+      const dt = Math.max(r.time-prev.time, 1e-3);
+      const d = Math.hypot(r.handX-prev.handX, r.handY-prev.handY);
+      const scale = r.shoulderWidth || prev.shoulderWidth || 0.18;
+      r.handSpeed = d/dt/Math.max(scale, 1e-4);
+      r.acceleration = (r.handSpeed-(prev.handSpeed||0))/dt;
+      prev = r;
+    });
+    const speeds = records.map(r => r && Number.isFinite(r.handSpeed) ? r.handSpeed : 0);
+    for (let i=0;i<records.length;i++) {
+      const window = speeds.slice(Math.max(0,i-2), Math.min(speeds.length,i+3)).sort((a,b)=>a-b);
+      if (records[i]) records[i].speedSmooth = window[Math.floor(window.length/2)] || 0;
+    }
+  }
+
+  function assignPhases(records) {
+    const validIndices = records.map((r,i)=>r&&r.detected?i:null).filter(i=>i!==null);
+    if (validIndices.length < 4) return [];
+    const first = validIndices[0], last = validIndices[validIndices.length-1];
+    const addressEnd = Math.min(last, first + Math.max(1, Math.round(validIndices.length*0.12)));
+    const topSearchEnd = Math.min(last, first + Math.max(3, Math.round(validIndices.length*0.70)));
+    let topIndex = addressEnd + 1;
+    let minY = Infinity;
+    for (let i=addressEnd+1;i<=topSearchEnd;i++) {
+      const r=records[i]; if (r&&r.detected&&r.handY<minY) {minY=r.handY; topIndex=i;}
+    }
+    let impactIndex = Math.min(last, topIndex+1), maxSpeed=-Infinity;
+    for (let i=topIndex+1;i<=last;i++) {
+      const r=records[i]; if (!r||!r.detected) continue;
+      const value = Number.isFinite(r.speedSmooth) ? r.speedSmooth : r.motionValue;
+      if (value>maxSpeed) {maxSpeed=value; impactIndex=i;}
+    }
+    records.forEach((r,i)=>{
+      if(!r) return;
+      if(i<=addressEnd) r.phase="Address";
+      else if(i<topIndex) r.phase="Backswing";
+      else if(i===topIndex) r.phase="Top";
+      else if(i<impactIndex) r.phase="Downswing";
+      else if(i===impactIndex) r.phase="Impact";
+      else r.phase="Follow-through";
+    });
+    const phaseNames=["Address","Backswing","Top","Downswing","Impact","Follow-through"];
+    return phaseNames.map(name=>{
+      const rows=records.filter(r=>r&&r.phase===name);
+      return rows.length?{name,start:rows[0].time,end:rows[rows.length-1].time,frames:rows.length}:null;
+    }).filter(Boolean);
+  }
+
+  function buildSummary(records, mode, expected) {
+    const valid=records.filter(r=>r&&r.detected);
+    const phases=assignPhases(records);
+    if(mode==="pose") {
+      const address=valid.filter(r=>r.phase==="Address");
+      const impact=valid.find(r=>r.phase==="Impact") || valid.reduce((a,b)=>(b.speedSmooth||0)>(a.speedSmooth||0)?b:a,valid[0]);
+      const top=valid.find(r=>r.phase==="Top") || valid[Math.floor(valid.length*.45)];
+      const addressEnd=address[address.length-1] || valid[0];
+      const backswing=Math.max(top.time-addressEnd.time,.001);
+      const downswing=Math.max(impact.time-top.time,.001);
+      const accelStd=standardDeviation(valid.map(r=>r.acceleration||0));
+      return {
+        mode, phases,
+        coverage: valid.length/Math.max(expected,1),
+        torsoTilt: mean(address.map(r=>r.torsoTilt)),
+        kneeAngle: mean(address.flatMap(r=>[r.leftKnee,r.rightKnee])),
+        separation: maxValue(valid.map(r=>r.separation)),
+        hipSway: maxValue(valid.map(r=>r.hipSway)),
+        headMotion: maxValue(valid.map(r=>r.headMotion)),
+        impactElbow: mean([impact.leftElbow,impact.rightElbow]),
+        tempoRatio: backswing/downswing,
+        smoothness: 1/(1+accelStd),
+        peakSpeed: maxValue(valid.map(r=>r.speedSmooth)),
+      };
+    }
+    const energies=valid.map(r=>r.motionValue||0);
+    const xs=valid.map(r=>r.handX), ys=valid.map(r=>r.handY);
+    const peakIndex=energies.indexOf(Math.max(...energies));
+    const peak=valid[Math.max(0,peakIndex)];
+    const before=Math.max(peak.time-valid[0].time,.001);
+    const after=Math.max(valid[valid.length-1].time-peak.time,.001);
+    const diff=[]; for(let i=1;i<energies.length;i++) diff.push(Math.abs(energies[i]-energies[i-1]));
+    return {
+      mode, phases, coverage:1,
+      motionEnergy:mean(energies), peakMotion:maxValue(energies),
+      horizontalStability:1-standardDeviation(xs), verticalStability:1-standardDeviation(ys),
+      tempoRatio:before/after, smoothness:1/(1+20*mean(diff)),
+      centerTravel:Math.hypot(maxValue(xs)-Math.min(...xs),maxValue(ys)-Math.min(...ys)),
+    };
+  }
+
+  function scoreSummary(summary) {
+    let metrics=[];
+    if(summary.mode==="pose") {
+      metrics=[
+        {key:"Posture",score:(bandScore(summary.torsoTilt,12,38,0,65)+bandScore(summary.kneeAngle,135,178,95,190))/2,detail:`Torso ${summary.torsoTilt.toFixed(1)}°, knees ${summary.kneeAngle.toFixed(1)}°`},
+        {key:"Rotation",score:bandScore(summary.separation,8,42,0,75),detail:`Max shoulder–hip separation ${summary.separation.toFixed(1)}°`},
+        {key:"Balance",score:(lowGood(summary.hipSway,.35,.95)+lowGood(summary.headMotion,.45,1.20))/2,detail:`Hip sway ${summary.hipSway.toFixed(2)}, head motion ${summary.headMotion.toFixed(2)} shoulder widths`},
+        {key:"Tempo",score:bandScore(summary.tempoRatio,1.7,4.0,.5,7.0),detail:`Backswing/downswing ratio ${summary.tempoRatio.toFixed(2)}`},
+        {key:"Extension",score:bandScore(summary.impactElbow,125,180,80,195),detail:`Mean impact elbow angle ${summary.impactElbow.toFixed(1)}°`},
+        {key:"Smoothness",score:clamp(summary.smoothness*100,0,100),detail:`Motion smoothness index ${summary.smoothness.toFixed(2)}`},
+      ];
+    } else {
+      metrics=[
+        {key:"Motion quality",score:bandScore(summary.motionEnergy,.015,.12,.001,.30),detail:`Average frame motion ${(summary.motionEnergy*100).toFixed(1)}%`},
+        {key:"Peak action",score:bandScore(summary.peakMotion,.04,.22,.005,.45),detail:`Peak motion ${(summary.peakMotion*100).toFixed(1)}%`},
+        {key:"Horizontal stability",score:clamp(summary.horizontalStability*110,0,100),detail:"Motion-centroid stability proxy"},
+        {key:"Vertical stability",score:clamp(summary.verticalStability*110,0,100),detail:"Motion-centroid stability proxy"},
+        {key:"Tempo",score:bandScore(summary.tempoRatio,.8,2.8,.2,6),detail:`Peak timing ratio ${summary.tempoRatio.toFixed(2)}`},
+        {key:"Smoothness",score:clamp(summary.smoothness*100,0,100),detail:`Motion smoothness index ${summary.smoothness.toFixed(2)}`},
+      ];
+    }
+    metrics.forEach(m=>m.score=clamp(finite(m.score),0,100));
+    const overall=mean(metrics.map(m=>m.score));
+    const x=metrics.map(m=>(m.score-50)/50);
+    const hidden=[
+      Math.tanh(.65*x[0]-.20*x[1]+.35*x[2]+.15*x[3]),
+      Math.tanh(-.15*x[0]+.55*x[1]+.20*x[4]+.30*x[5]),
+      Math.tanh(.25*x[0]+.15*x[2]+.45*x[3]+.30*x[4]),
+    ];
+    const dnn=100/(1+Math.exp(-(.9*hidden[0]+.75*hidden[1]+.65*hidden[2])));
+    return {metrics,overall,dnn};
+  }
+
+  function buildAdvice(scored, summary) {
+    const sorted=[...scored.metrics].sort((a,b)=>a.score-b.score);
+    const library={
+      "Posture": ["Posture checkpoint","Use a mirror or face-on recording to rehearse a neutral hip hinge. Make three slow swings while keeping the chest angle steady."],
+      "Rotation": ["Sequence rotation","Place a club across the shoulders and rehearse shoulder turn followed by hip unwinding. Start with half swings before adding speed."],
+      "Balance": ["Centered finish","Use feet-together swings and hold the finish for three seconds. Reduce effort until the finish is stable, then rebuild speed."],
+      "Tempo": ["Rhythm drill","Count “one-two-three” to the top and “one” through impact. Compare three slow swings with three normal swings."],
+      "Extension": ["Impact extension","Practice waist-high punch shots and feel both arms lengthen after contact without forcing the elbows locked."],
+      "Smoothness": ["Smooth transition","Pause briefly at the top during rehearsal swings, then begin the downswing from the lower body rather than pulling with the hands."],
+      "Motion quality": ["Clearer recording","Use brighter lighting, a stationary camera, and a full-body framing so movement can be separated from background noise."],
+      "Peak action": ["Controlled acceleration","Build speed progressively through the downswing instead of creating one abrupt motion spike."],
+      "Horizontal stability": ["Stable center","Place a reference object behind the hips in the video and rehearse turning around a centered base."],
+      "Vertical stability": ["Level movement","Use three-quarter swings and avoid excessive rise or dip until contact becomes repeatable."],
+    };
+    const preferences=JSON.parse(localStorage.getItem("golfCoachPreferences")||"{}");
+    return sorted.slice(0,4).map((m,i)=>{
+      const [title,body]=library[m.key]||[`${m.key} practice`,`Use a controlled drill and re-record the same camera angle to compare the result.`];
+      return {category:m.key,title,body,priority:(100-m.score)+(preferences[m.key]||0)*8,score:m.score,id:`advice-${i}-${m.key.replace(/\W/g,'')}`};
+    }).sort((a,b)=>b.priority-a.priority);
+  }
+
+  function buildPlan(advice) {
+    const focus=advice[0]?.category || "fundamentals";
+    return [
+      {week:"Week 1",text:`Baseline ${focus.toLowerCase()}: record two consistent camera views and complete three sets of five slow swings.`},
+      {week:"Week 2",text:"Pattern building: repeat the top two recommended drills at controlled speed and rate each cue."},
+      {week:"Week 3",text:"Transfer: alternate clubs or targets while preserving the same setup, balance, and rhythm."},
+      {week:"Week 4",text:"Retest: recreate the Week 1 recording conditions, compare scores, and keep only cues that improved repeatability."},
+    ];
+  }
+
+  function phaseColor(phase) {
+    return {"Address":"#64748b","Backswing":"#2563eb","Top":"#7c3aed","Downswing":"#db7c00","Impact":"#dc2626","Follow-through":"#0f8a57"}[phase] || "#0f5d42";
+  }
+
+  function drawLandmarks(record, includeVideo=true) {
+    if (!record) return;
+    if (video.style.display!=="none" && includeVideo && video.readyState>=2) octx.drawImage(video,0,0,overlay.width,overlay.height);
+    else { octx.fillStyle="#edf5f0"; octx.fillRect(0,0,overlay.width,overlay.height); }
+    if (record.landmarks) {
+      octx.save(); octx.lineWidth=Math.max(2,overlay.width/400); octx.strokeStyle="#31d18a"; octx.fillStyle="#ffd166";
+      for(const [a,b] of CONNECTIONS){const p=record.landmarks[a],q=record.landmarks[b]; if(!p||!q)continue; octx.beginPath();octx.moveTo(p.x*overlay.width,p.y*overlay.height);octx.lineTo(q.x*overlay.width,q.y*overlay.height);octx.stroke();}
+      for(const p of record.landmarks){if(!p)continue;octx.beginPath();octx.arc(p.x*overlay.width,p.y*overlay.height,Math.max(2,overlay.width/230),0,Math.PI*2);octx.fill();}
+      octx.restore();
+    } else {
+      octx.save(); octx.strokeStyle="#ffd166"; octx.lineWidth=3; const x=record.handX*overlay.width,y=record.handY*overlay.height; octx.beginPath();octx.arc(x,y,18,0,Math.PI*2);octx.stroke();octx.beginPath();octx.moveTo(x-25,y);octx.lineTo(x+25,y);octx.moveTo(x,y-25);octx.lineTo(x,y+25);octx.stroke();octx.restore();
+    }
+    const boxW=Math.min(360,overlay.width*.48), boxH=82;
+    octx.fillStyle="rgba(5,30,22,.78)"; octx.fillRect(12,12,boxW,boxH);
+    octx.fillStyle="#fff"; octx.font=`700 ${Math.max(16,overlay.width/48)}px sans-serif`;
+    octx.fillText(record.phase||"Swing",24,42);
+    octx.font=`500 ${Math.max(12,overlay.width/70)}px sans-serif`;
+    const line=record.landmarks?`Time ${record.time.toFixed(2)} s · hand speed ${(record.speedSmooth||0).toFixed(2)}`:`Time ${record.time.toFixed(2)} s · motion ${(record.motionValue*100).toFixed(1)}%`;
+    octx.fillText(line,24,69);
+  }
+
+  function drawSyntheticStick(record) {
+    overlay.width=960; overlay.height=540;
+    drawLandmarks(record,false);
+  }
+
+  function generateSyntheticRecords(count=60) {
+    const records=[];
+    for(let i=0;i<count;i++){
+      const t=i/(count-1), swing=Math.sin(Math.PI*t), turn=Math.sin(2*Math.PI*(t-.12));
+      const lm=Array.from({length:33},()=>({x:.5,y:.5,z:0,visibility:1}));
+      lm[0]={x:.50+.018*Math.sin(2*Math.PI*t),y:.20+.008*Math.cos(2*Math.PI*t),z:0,visibility:1};
+      lm[11]={x:.43-.035*turn,y:.34-.02*swing,z:0,visibility:1}; lm[12]={x:.57-.035*turn,y:.34+.02*swing,z:0,visibility:1};
+      lm[23]={x:.45-.012*turn,y:.58,z:0,visibility:1}; lm[24]={x:.55-.012*turn,y:.58,z:0,visibility:1};
+      lm[25]={x:.45,y:.75,z:0,visibility:1}; lm[26]={x:.55,y:.75,z:0,visibility:1}; lm[27]={x:.43,y:.94,z:0,visibility:1}; lm[28]={x:.57,y:.94,z:0,visibility:1};
+      const handX=.18+.66*t, handY=.47-.30*Math.sin(Math.PI*t)+.13*Math.sin(2*Math.PI*t);
+      lm[15]={x:handX-.015,y:handY,z:0,visibility:1}; lm[16]={x:handX+.015,y:handY,z:0,visibility:1};
+      lm[13]={x:(lm[11].x+lm[15].x)/2-.03,y:(lm[11].y+lm[15].y)/2,z:0,visibility:1};
+      lm[14]={x:(lm[12].x+lm[16].x)/2+.03,y:(lm[12].y+lm[16].y)/2,z:0,visibility:1};
+      records.push({index:i,time:t*3.2,landmarks:lm,detected:true});
+    }
+    const baseline={};
+    const features=records.map((r,i)=>extractPoseFeature(r.landmarks,r.time,i,baseline));
+    addSpeeds(features); return features;
+  }
+
+  async function analyzeVideo() {
+    const file=$("videoFile").files[0];
+    if(!file){setStatus("Select a video file before analysis.","bad");return;}
+    $("analyzeButton").disabled=true; $("demoButton").disabled=true; $("videoDownload").style.display="none";
+    try{
+      setProgress(.02); setStatus("Loading the selected video…","warn"); await loadSelectedVideo(file);
+      const maxSeconds=Number($("maxSeconds").value); const duration=Math.min(video.duration,maxSeconds); state.analysisDuration=duration;
+      const samples=Number($("sampleCount").value); const poseReady=await initializePoseEngine(true);
+      const mode=poseReady?"pose":"motion"; state.engine=poseReady?"MediaPipe Pose Landmarker":"Native browser motion fallback";
+      const records=[]; const baseline={}; const motionState={previous:null,lastX:.5,lastY:.5};
+      setStatus(`Analyzing ${samples} frames with ${poseReady?"pose landmarks":"motion fallback"}…`,"warn");
+      for(let i=0;i<samples;i++){
+        const time=samples===1?0:(duration-.04)*i/(samples-1); await seekTo(time);
+        let record=null;
+        if(poseReady){
+          try{
+            const result=state.poseLandmarker.detectForVideo(video,i*1000);
+            const landmarks=result?.landmarks?.[0]||null;
+            if(landmarks) record=extractPoseFeature(landmarks,time,i,baseline);
+          }catch(err){console.warn("Pose frame failed",err);}
+        }
+        if(!record && !poseReady) record=calculateMotionFeature(time,i,motionState);
+        records.push(record);
+        if(record){record.phase="Processing";drawLandmarks(record);state.lastRenderedRecord=record;}
+        setProgress(.12+.78*(i+1)/samples);
+        if(i%4===0) await new Promise(r=>setTimeout(r,0));
+      }
+      const detected=records.filter(Boolean).length;
+      if(poseReady && detected<Math.max(4,Math.round(samples*.12))){
+        setStatus("Pose coverage was too low; repeating with the native motion fallback…","warn");
+        const fallback=[]; motionState.previous=null;
+        for(let i=0;i<samples;i++){
+          const time=(duration-.04)*i/(samples-1); await seekTo(time); fallback.push(calculateMotionFeature(time,i,motionState)); setProgress(.90+.07*(i+1)/samples);
+        }
+        addSpeeds(fallback); finalizeAnalysis(fallback,"motion",samples,file.name);
+      }else{
+        addSpeeds(records); finalizeAnalysis(records,mode,samples,file.name);
+      }
+      setProgress(1); setStatus("Analysis complete. Review the scores, suggestions, and downloads below.","good");
+    }catch(error){console.error(error);setStatus(error.message||String(error),"bad");setProgress(0);}
+    finally{$("analyzeButton").disabled=false;$("demoButton").disabled=false;}
+  }
+
+  function runDemo(){
+    try{
+      video.pause(); video.style.display="none"; $("viewerPlaceholder").style.display="none"; $("videoDownload").style.display="none";
+      setStatus("Generating the synthetic demonstration…","warn");setProgress(.25);
+      const records=generateSyntheticRecords(64); state.analysisDuration=3.2; state.file=null;
+      finalizeAnalysis(records,"pose",records.length,"synthetic_demo");
+      const impact=records.find(r=>r.phase==="Impact")||records[records.length-1]; drawSyntheticStick(impact); state.lastRenderedRecord=impact;
+      $("enginePill").textContent="Engine: synthetic pose demo";$("durationPill").textContent="Duration: 3.2 s";
+      $("recordButton").disabled=true; setProgress(1);setStatus("Synthetic demo complete. Upload a real clip for personal analysis.","good");
+    }catch(error){setStatus(error.message||String(error),"bad");}
+  }
+
+  function finalizeAnalysis(records,mode,expected,sourceName){
+    const summary=buildSummary(records,mode,expected); const scored=scoreSummary(summary); const advice=buildAdvice(scored,summary); const plan=buildPlan(advice);
+    const coverage=summary.coverage||1;
+    state.result={
+      metadata:{source:sourceName,engine:mode==="pose"?state.engine:"Native browser motion fallback",delegate:state.delegate,author:AUTHOR,mentor:MENTOR,generatedAt:new Date().toISOString(),golfer:$("golferName").value||"Golfer",handedness:$("handedness").value,experience:$("experience").value,goal:$("goal").value},
+      summary,scores:scored,advice,practicePlan:plan,records:records.filter(Boolean).map(stripRecord)
+    };
+    $("coveragePill").textContent=`Pose coverage: ${(coverage*100).toFixed(0)}%`;
+    $("enginePill").textContent=`Engine: ${mode==="pose"?"pose landmarks":"motion fallback"}`;
+    $("durationPill").textContent=`Analyzed: ${state.analysisDuration.toFixed(1)} s`;
+    renderResults(state.result);
+    const impact=records.find(r=>r&&r.phase==="Impact")||records.filter(Boolean).slice(-1)[0];
+    if(impact){
+      state.lastRenderedRecord=impact;
+      if(video.style.display!=="none" && Number.isFinite(impact.time)){
+        const renderImpact=()=>drawLandmarks(impact,true);
+        if(Math.abs(video.currentTime-impact.time)>.02){
+          video.addEventListener("seeked",renderImpact,{once:true});
+          video.currentTime=clamp(impact.time,0,Math.max(0,video.duration-.03));
+        }else renderImpact();
+      }else drawLandmarks(impact,false);
+    }
+    $("recordButton").disabled=!(state.file&&video.style.display!=="none"&&typeof MediaRecorder!=="undefined"&&overlay.captureStream);
+  }
+
+  function stripRecord(r){
+    const copy={...r};
+    if(copy.landmarks) copy.landmarks=copy.landmarks.map(p=>({x:+p.x.toFixed(5),y:+p.y.toFixed(5),z:+finite(p.z).toFixed(5),visibility:+finite(p.visibility??p.presence,1).toFixed(3)}));
+    for(const k of Object.keys(copy)) if(typeof copy[k]==="number") copy[k]=+copy[k].toFixed(6);
+    return copy;
+  }
+
+  function renderResults(result){
+    $("results").style.display="block"; $("overallScore").textContent=Math.round(result.scores.overall); $("engineLabel").textContent=`DNN architecture demo: ${result.scores.dnn.toFixed(0)}`;
+    $("metricGrid").innerHTML=result.scores.metrics.map(m=>`<div class="metric"><div class="name">${escapeHtml(m.key)}</div><div class="value">${Math.round(m.score)}</div><div class="detail">${escapeHtml(m.detail)}</div><div class="bar"><span style="width:${m.score.toFixed(0)}%"></span></div></div>`).join("");
+    $("phaseTable").innerHTML=result.summary.phases.map(p=>`<tr><td><span style="color:${phaseColor(p.name)};font-weight:800">${p.name}</span></td><td>${p.start.toFixed(2)} s</td><td>${p.end.toFixed(2)} s</td><td>${p.frames}</td></tr>`).join("");
+    renderAdvice(result.advice); $("practicePlan").innerHTML=result.practicePlan.map(p=>`<div class="week"><strong>${escapeHtml(p.week)}</strong><div>${escapeHtml(p.text)}</div></div>`).join("");
+    drawChart(result.records,result.summary.mode);
+    setTimeout(()=>$("results").scrollIntoView({behavior:"smooth",block:"start"}),80);
+  }
+
+  function renderAdvice(advice){
+    $("adviceList").innerHTML=advice.map(a=>`<div class="advice"><div class="advice-title">${escapeHtml(a.title)} <span style="font-weight:500;color:#75837c">(${Math.round(a.score)}/100)</span></div><div class="advice-body">${escapeHtml(a.body)}</div><div class="feedback"><button data-category="${escapeHtml(a.category)}" data-reward="1">👍 Helpful</button><button data-category="${escapeHtml(a.category)}" data-reward="-1">👎 Not helpful</button><span id="fb-${a.id}" style="font-size:11px;color:#66776f;align-self:center"></span></div></div>`).join("");
+    $("adviceList").querySelectorAll("button[data-category]").forEach(btn=>btn.addEventListener("click",()=>rateAdvice(btn.dataset.category,Number(btn.dataset.reward),btn)));
+  }
+
+  function rateAdvice(category,reward,button){
+    const prefs=JSON.parse(localStorage.getItem("golfCoachPreferences")||"{}"); prefs[category]=clamp((prefs[category]||0)+reward,-5,5); localStorage.setItem("golfCoachPreferences",JSON.stringify(prefs));
+    button.parentElement.querySelector("span").textContent=reward>0?"Saved as helpful":"Saved for lower priority";
+  }
+
+  function escapeHtml(value){return String(value).replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));}
+
+  function drawChart(records,mode){
+    const canvas=$("metricChart"),rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+    canvas.width=Math.max(640,Math.round(rect.width*dpr));canvas.height=Math.round(270*dpr);const ctx=canvas.getContext("2d");ctx.scale(dpr,dpr);
+    const w=canvas.width/dpr,h=canvas.height/dpr,pad={l:42,r:14,t:18,b:34};ctx.clearRect(0,0,w,h);ctx.fillStyle="#fff";ctx.fillRect(0,0,w,h);
+    const values=records.map(r=>mode==="pose"?finite(r.speedSmooth):finite(r.motionValue));const maxY=Math.max(...values,1e-4)*1.1;
+    ctx.strokeStyle="#dfe8e3";ctx.lineWidth=1;for(let i=0;i<=4;i++){const y=pad.t+(h-pad.t-pad.b)*i/4;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke();}
+    for(let i=0;i<records.length-1;i++){const x1=pad.l+(w-pad.l-pad.r)*i/(records.length-1),x2=pad.l+(w-pad.l-pad.r)*(i+1)/(records.length-1);ctx.fillStyle=phaseColor(records[i].phase);ctx.globalAlpha=.08;ctx.fillRect(x1,pad.t,x2-x1,h-pad.t-pad.b);}ctx.globalAlpha=1;
+    ctx.strokeStyle="#0f5d42";ctx.lineWidth=2.5;ctx.beginPath();records.forEach((r,i)=>{const x=pad.l+(w-pad.l-pad.r)*i/Math.max(records.length-1,1);const y=h-pad.b-(h-pad.t-pad.b)*values[i]/maxY;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);});ctx.stroke();
+    ctx.fillStyle="#50655c";ctx.font="11px sans-serif";ctx.fillText("0",16,h-pad.b+4);ctx.fillText(maxY.toFixed(mode==="pose"?1:2),8,pad.t+4);ctx.fillText("Time",w/2-12,h-8);ctx.save();ctx.translate(12,h/2+18);ctx.rotate(-Math.PI/2);ctx.fillText(mode==="pose"?"Hand speed":"Motion energy",0,0);ctx.restore();
+  }
+
+  function downloadBlob(filename,mime,data){const blob=data instanceof Blob?data:new Blob([data],{type:mime});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  function downloadJSON(){if(!state.result)return;downloadBlob("ai_golf_coach_report.json","application/json",JSON.stringify(state.result,null,2));}
+  function downloadCSV(){if(!state.result)return;const rows=state.result.records;const keys=["index","time","phase","detected","leftElbow","rightElbow","leftKnee","rightKnee","torsoTilt","separation","hipSway","headMotion","handSpeed","speedSmooth","motionValue","visibility"];const csv=[keys.join(","),...rows.map(r=>keys.map(k=>{const v=r[k]??"";return typeof v==="string"?`"${v.replace(/"/g,'""')}"`:v}).join(","))].join("\n");downloadBlob("ai_golf_coach_frame_metrics.csv","text/csv",csv);}
+  function downloadPNG(){if(!state.lastRenderedRecord)return;overlay.toBlob(blob=>{if(blob)downloadBlob("ai_golf_coach_annotated_frame.png","image/png",blob);},"image/png");}
+
+  async function recordAnnotatedVideo(){
+    if(!state.result||!state.file||state.recording)return; if(!overlay.captureStream||typeof MediaRecorder==="undefined"){ $("recordStatus").textContent="This browser does not support canvas recording."; return; }
+    state.recording=true;$("recordButton").disabled=true;$("videoDownload").style.display="none";$("recordStatus").textContent="Recording annotated playback in real time…";
+    const stream=overlay.captureStream(20);let mime="video/webm";if(MediaRecorder.isTypeSupported("video/webm;codecs=vp9"))mime="video/webm;codecs=vp9";else if(MediaRecorder.isTypeSupported("video/webm;codecs=vp8"))mime="video/webm;codecs=vp8";
+    const recorder=new MediaRecorder(stream,{mimeType:mime});const chunks=[];recorder.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
+    const finished=new Promise(resolve=>recorder.onstop=resolve);recorder.start(250);video.muted=true;await seekTo(0);await video.play();
+    const records=state.result.records;const end=state.analysisDuration;
+    await new Promise(resolve=>{
+      const loop=()=>{
+        const t=video.currentTime;let nearest=records[0];for(const r of records){if(Math.abs(r.time-t)<Math.abs(nearest.time-t))nearest=r;}
+        if(nearest.landmarks)nearest={...nearest,landmarks:nearest.landmarks};drawLandmarks(nearest,true);
+        if(video.ended||t>=end){video.pause();resolve();return;}requestAnimationFrame(loop);
+      };requestAnimationFrame(loop);
+    });
+    recorder.stop();await finished;const blob=new Blob(chunks,{type:mime});const url=URL.createObjectURL(blob);const link=$("videoDownload");link.href=url;link.download="ai_golf_coach_annotated.webm";link.style.display="inline-flex";$("recordStatus").textContent="Annotated WebM is ready. Use the download button.";state.recording=false;$("recordButton").disabled=false;
+  }
+
+  function resetAll(){
+    if(state.objectUrl)URL.revokeObjectURL(state.objectUrl);state.objectUrl=null;state.file=null;state.result=null;state.lastRenderedRecord=null;video.pause();video.removeAttribute("src");video.load();video.style.display="none";$("viewerPlaceholder").style.display="block";octx.clearRect(0,0,overlay.width,overlay.height);$("videoFile").value="";$("results").style.display="none";$("durationPill").textContent="Duration: —";$("coveragePill").textContent="Pose coverage: —";$("recordButton").disabled=true;$("videoDownload").style.display="none";setProgress(0);setStatus("Reset complete. Select a video or run the synthetic demo.");
+  }
+
+  $("sampleCount").addEventListener("input",e=>$("sampleValue").textContent=e.target.value);
+  $("maxSeconds").addEventListener("input",e=>$("secondsValue").textContent=`${e.target.value} s`);
+  $("initButton").addEventListener("click",()=>initializePoseEngine(false));
+  $("analyzeButton").addEventListener("click",analyzeVideo);
+  $("demoButton").addEventListener("click",runDemo);
+  $("resetButton").addEventListener("click",resetAll);
+  $("jsonButton").addEventListener("click",downloadJSON);
+  $("csvButton").addEventListener("click",downloadCSV);
+  $("pngButton").addEventListener("click",downloadPNG);
+  $("recordButton").addEventListener("click",recordAnnotatedVideo);
+  $("videoFile").addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;try{await loadSelectedVideo(file);state.file=file;setStatus(`Loaded ${file.name}. Initialize pose AI or click Analyze.`,"good");}catch(err){setStatus(err.message||String(err),"bad");}});
+  window.addEventListener("resize",()=>{if(state.result)drawChart(state.result.records,state.result.summary.mode);});
+})();
+</script>
+</body>
+</html>

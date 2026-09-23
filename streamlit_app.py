@@ -1,38 +1,26 @@
-"""Streamlit Community Cloud entry point for Isaiah Goh's AI Golf Coach."""
+"""Fast Streamlit Cloud edition of Isaiah Goh's AI Golf Coach.
+
+The server imports only Streamlit and Python's standard library. Video pose
+inference runs inside the visitor's browser through an embedded MediaPipe Web
+component, so Streamlit Community Cloud does not need to install MediaPipe,
+OpenCV, FFmpeg, PyTorch, or scikit-learn before the app can start.
+"""
 
 from __future__ import annotations
 
 import json
-import re
-import shutil
-import tempfile
-import traceback
+import math
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
-import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
-from golf_coach.analysis import build_feature_dataframe, frame_feature_map, summarize_swing
-from golf_coach.coaching import (
-    ContextualBanditCoach,
-    build_advice,
-    build_practice_plan,
-    weakest_state,
-)
-from golf_coach.models import predict_demo_models
-from golf_coach.reports import build_download_package, build_report_html
-from golf_coach.video import (
-    PoseBackendUnavailable,
-    create_annotated_video,
-    create_demo_video,
-    extract_pose_records,
-    standardize_video,
-)
-
+ROOT = Path(__file__).resolve().parent
 AUTHOR = "Isaiah Goh"
 MENTOR = "Dr. Qingyang Xiao"
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0-fast-cloud"
 
 st.set_page_config(
     page_title="AI Golf Coach | Isaiah Goh",
@@ -44,110 +32,159 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-.block-container { padding-top: 1.7rem; padding-bottom: 3rem; }
-.hero { padding: 1.2rem 1.4rem; border-radius: 18px; background: linear-gradient(135deg,#e9f6ee,#f7fbf8); border: 1px solid #cae4d3; margin-bottom: 1rem; }
-.hero h1 { margin: 0; color: #123c33; }
-.hero p { margin: .35rem 0 0; color: #35554d; }
-.credit { font-size: .95rem; color: #52635f; }
-.notice { padding: .8rem 1rem; border-left: 5px solid #b88400; background: #fff8df; border-radius: 6px; }
-.good { padding: .8rem 1rem; border-left: 5px solid #278a56; background: #edf9f1; border-radius: 6px; }
-.small { font-size: .9rem; color: #5b6663; }
-footer { visibility: hidden; }
+:root {
+  --golf-green: #0f5d42;
+  --golf-light: #edf8f2;
+  --golf-gold: #c7942f;
+  --ink: #16322a;
+}
+.block-container {padding-top: 1.15rem; padding-bottom: 3rem; max-width: 1500px;}
+.hero {
+  padding: 1.35rem 1.55rem;
+  border-radius: 20px;
+  background: linear-gradient(125deg, #e8f7ef 0%, #fbfdfb 62%, #fff7e5 100%);
+  border: 1px solid #c9e6d6;
+  box-shadow: 0 12px 30px rgba(15, 93, 66, .08);
+  margin-bottom: 1rem;
+}
+.hero h1 {margin: 0; color: var(--ink); font-size: clamp(2rem, 4vw, 3.2rem);}
+.hero p {margin: .42rem 0 0; color: #46645b; font-size: 1.03rem;}
+.credit {font-size: .96rem !important; color: #52675f !important;}
+.fast-badge {
+  display: inline-block; padding: .25rem .65rem; border-radius: 999px;
+  background: #0f5d42; color: white; font-size: .78rem; font-weight: 700;
+  letter-spacing: .03em; margin-bottom: .55rem;
+}
+.notice {
+  padding: .85rem 1rem; border-left: 5px solid #b88400;
+  background: #fff8df; border-radius: 8px; margin: .6rem 0 1rem;
+}
+.success-note {
+  padding: .85rem 1rem; border-left: 5px solid #17824f;
+  background: #edf9f1; border-radius: 8px; margin: .6rem 0 1rem;
+}
+.metric-panel {
+  padding: 1rem; background: #f8fbf9; border: 1px solid #dfece5;
+  border-radius: 14px; min-height: 120px;
+}
+.small-note {font-size: .88rem; color: #5b6964;}
+footer {visibility: hidden;}
 </style>
 """,
     unsafe_allow_html=True,
 )
 
 
-def _safe_filename(name: str) -> str:
-    base = Path(name).name
-    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", base)
-    return cleaned or "uploaded_video.mp4"
+def _build_practice_plan(profile: dict[str, Any]) -> list[dict[str, str]]:
+    """Create a transparent rule-based four-week practice plan."""
+    goal = profile["primary_goal"]
+    experience = profile["experience"]
+    days = int(profile["activity_days"])
+    session_minutes = 25 if days <= 2 else 35 if days <= 4 else 45
 
-
-def _new_workspace() -> Path:
-    previous = st.session_state.get("workspace")
-    if previous:
-        shutil.rmtree(previous, ignore_errors=True)
-    workspace = Path(tempfile.mkdtemp(prefix="isaiah_goh_golf_coach_"))
-    (workspace / "models").mkdir(parents=True, exist_ok=True)
-    st.session_state["workspace"] = str(workspace)
-    return workspace
-
-
-def _progress_callback(progress_bar: Any, status_box: Any):
-    def callback(fraction: float, message: str) -> None:
-        progress_bar.progress(float(fraction))
-        status_box.info(message)
-    return callback
-
-
-def _profile_inputs() -> Dict[str, Any]:
-    st.subheader("Golfer profile")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        name = st.text_input("Name", value="Demo Golfer")
-        age = st.number_input("Age", min_value=8, max_value=100, value=18, step=1)
-        gender = st.selectbox(
-            "Gender (optional)",
-            ["Prefer not to say", "Female", "Male", "Non-binary", "Self-described"],
-        )
-    with col2:
-        height_cm = st.number_input("Height (cm)", min_value=100.0, max_value=230.0, value=175.0, step=0.5)
-        weight_kg = st.number_input("Weight (kg)", min_value=25.0, max_value=250.0, value=70.0, step=0.5)
-        handedness = st.selectbox("Golf handedness", ["Right-handed", "Left-handed"])
-    with col3:
-        experience = st.selectbox("Experience level", ["Beginner", "Intermediate", "Advanced"])
-        gym_days = st.slider("Gym/activity days per week", 0, 7, 3)
-        primary_goal = st.selectbox(
-            "Primary goal",
-            ["Improve swing consistency", "Improve balance", "Improve tempo", "Improve rotation", "General practice"],
-        )
-    health_notes = st.text_area(
-        "Health or movement considerations (optional)",
-        placeholder="Only share information needed to adapt practice. Do not enter sensitive medical records.",
-        height=80,
-    )
-    bmi = weight_kg / ((height_cm / 100.0) ** 2)
-    st.caption(f"Calculated BMI: {bmi:.1f}. BMI is collected only for basic profile context and is not used for diagnosis.")
-    return {
-        "name": name.strip() or "Golfer",
-        "gender": gender,
-        "age": int(age),
-        "height_cm": float(height_cm),
-        "weight_kg": float(weight_kg),
-        "bmi": round(float(bmi), 2),
-        "golf_handedness": handedness,
-        "experience_level": experience,
-        "gym_activity_days_per_week": int(gym_days),
-        "primary_goal": primary_goal,
-        "health_notes": health_notes.strip(),
+    focus_map = {
+        "Improve swing consistency": (
+            "repeatable setup and contact",
+            "Use alignment sticks, pause at address, and record three sets of five swings.",
+        ),
+        "Improve balance": (
+            "centered pressure and stable finish",
+            "Use feet-together swings, hold the finish for three seconds, and reduce speed before adding power.",
+        ),
+        "Improve tempo": (
+            "backswing-to-downswing rhythm",
+            "Practice with a 3:1 count, alternate slow-motion and normal swings, and compare rhythm across sets.",
+        ),
+        "Improve rotation": (
+            "shoulder and hip sequencing",
+            "Use club-across-chest turns, step-through drills, and controlled half swings before full swings.",
+        ),
+        "Improve posture": (
+            "athletic setup and spine control",
+            "Use mirror checkpoints, hip-hinge drills, and short swings while maintaining head and torso stability.",
+        ),
+        "General practice": (
+            "balanced fundamentals",
+            "Rotate through setup, tempo, balance, contact, and reflection drills.",
+        ),
     }
+    focus, drill = focus_map.get(goal, focus_map["General practice"])
+    intensity = {
+        "Beginner": "Keep effort near 60–70% and prioritize clean movement patterns.",
+        "Intermediate": "Use 70–85% effort and compare repeatability across multiple sets.",
+        "Advanced": "Alternate technical blocks with competition-like pressure sets.",
+    }[experience]
+
+    return [
+        {
+            "week": "Week 1 — Baseline",
+            "focus": focus,
+            "plan": f"{session_minutes} minutes per session. {drill} Record one face-on and one down-the-line clip.",
+        },
+        {
+            "week": "Week 2 — Controlled Repetition",
+            "focus": "low-speed pattern building",
+            "plan": f"Complete 3–4 sets of five swings. {intensity} Keep notes on the most repeatable cue.",
+        },
+        {
+            "week": "Week 3 — Transfer",
+            "focus": "variable clubs and targets",
+            "plan": "Alternate two clubs or targets while preserving the same pre-shot routine. Recheck video after each block.",
+        },
+        {
+            "week": "Week 4 — Retest",
+            "focus": "comparison with the original baseline",
+            "plan": "Repeat the Week 1 camera setup, compare the same metrics, and retain only cues that improved both score and comfort.",
+        },
+    ]
+
+
+def _initialize_feedback_state() -> None:
+    if "bandit_values" not in st.session_state:
+        st.session_state.bandit_values = {
+            "Tempo drill": 0.50,
+            "Balance drill": 0.50,
+            "Rotation drill": 0.50,
+            "Posture drill": 0.50,
+            "Video checkpoint": 0.50,
+        }
+    if "bandit_counts" not in st.session_state:
+        st.session_state.bandit_counts = {key: 0 for key in st.session_state.bandit_values}
+
+
+def _update_feedback(action: str, reward: float) -> None:
+    _initialize_feedback_state()
+    count = st.session_state.bandit_counts[action] + 1
+    old_value = st.session_state.bandit_values[action]
+    new_value = old_value + (reward - old_value) / count
+    st.session_state.bandit_counts[action] = count
+    st.session_state.bandit_values[action] = max(0.0, min(1.0, new_value))
 
 
 with st.sidebar:
-    st.header("AI Golf Coach")
+    st.header("🏌️ AI Golf Coach")
     st.write(f"**Author:** {AUTHOR}")
     st.write(f"**Mentor:** {MENTOR}")
     st.caption(f"Version {APP_VERSION}")
     st.divider()
-    st.markdown(
-        "This repository is designed for GitHub and Streamlit Community Cloud. "
-        "It includes pose analysis, supervised ML, a multi-layer neural network, "
-        "and feedback-based reinforcement learning."
+    st.markdown("**Why this edition launches faster**")
+    st.caption(
+        "The Streamlit server has no heavy computer-vision dependencies. "
+        "Pose inference runs in the visitor's browser, with an automatic motion-analysis fallback."
     )
     st.divider()
     st.markdown("**Recording guidance**")
-    st.markdown(
+    st.caption(
         "Use a stationary camera, keep the entire golfer visible, record in good light, "
-        "and avoid other people in the frame. Face-on footage works best for this MVP."
+        "and avoid other people in the frame. Face-on or down-the-line footage works best."
     )
 
 st.markdown(
     f"""
 <div class="hero">
+  <span class="fast-badge">FAST STREAMLIT CLOUD EDITION</span>
   <h1>🏌️ AI-Based Golf Coach</h1>
-  <p>Video pose analysis, interpretable swing metrics, ML/DNN scoring, personalized practice planning, and feedback learning.</p>
+  <p>Browser-based pose landmarks, joint-angle visualization, swing-phase analysis, interpretable scoring, practice planning, and feedback learning.</p>
   <p class="credit"><strong>Author:</strong> {AUTHOR} &nbsp; | &nbsp; <strong>Mentor:</strong> {MENTOR}</p>
 </div>
 """,
@@ -156,355 +193,194 @@ st.markdown(
 
 st.markdown(
     """
-<div class="notice"><strong>Educational prototype.</strong> This app is not a medical device, injury-risk tool, or replacement for a qualified golf coach. The ML and neural-network scores use synthetic training labels and demonstrate architecture rather than validated coaching accuracy.</div>
+<div class="notice"><strong>Educational prototype.</strong> The scores and recommendations are for learning and demonstration. They are not medical advice, injury diagnosis, or a replacement for a qualified golf professional. The neural-network and reinforcement-learning sections demonstrate an AI architecture and are not clinically or professionally validated.</div>
 """,
     unsafe_allow_html=True,
 )
 
-analyze_tab, feedback_tab, about_tab = st.tabs(["Analyze a swing", "Feedback learning", "About the project"])
+studio_tab, profile_tab, feedback_tab, about_tab = st.tabs(
+    ["AI Swing Studio", "Profile & Practice Plan", "Feedback Learning", "About & Deployment"]
+)
 
-with analyze_tab:
-    profile = _profile_inputs()
-    st.divider()
-    st.subheader("Video input")
-    source_mode = st.radio(
-        "Choose a source",
-        ["Synthetic demo", "Upload my golf video"],
-        horizontal=True,
-        help="The demo verifies the full app without uploading personal data.",
+with studio_tab:
+    st.markdown(
+        """
+<div class="success-note"><strong>Privacy-first video processing:</strong> the video selected inside the studio remains in the browser. The Streamlit server does not receive or store the video. The first pose-analysis run downloads a browser AI model; if that model cannot load, the studio automatically switches to a native motion-analysis fallback.</div>
+""",
+        unsafe_allow_html=True,
     )
-    uploaded_file = None
-    if source_mode == "Upload my golf video":
-        uploaded_file = st.file_uploader(
-            "Upload a practice or playing clip",
-            type=["mp4", "mov", "m4v", "avi", "wmv", "mkv"],
-            help="For cloud reliability, clips are analyzed for a limited duration and sampled every few frames.",
-        )
+    html_path = ROOT / "web" / "pose_studio.html"
+    if not html_path.exists():
+        st.error("The browser studio file is missing from the repository: web/pose_studio.html")
     else:
-        st.info("Demo mode uses a generated stick-figure swing. It contains no personal video or health data.")
+        studio_html = html_path.read_text(encoding="utf-8")
+        studio_html = studio_html.replace("{{AUTHOR}}", AUTHOR).replace("{{MENTOR}}", MENTOR)
+        components.html(studio_html, height=1880, scrolling=True)
 
-    with st.expander("Analysis settings", expanded=False):
-        max_seconds = st.slider("Maximum analyzed seconds", 5, 30, 20)
-        frame_stride = st.slider(
-            "Frame sampling stride",
-            1,
-            6,
-            3,
-            help="A higher value is faster and uses less cloud memory; a lower value is smoother.",
-        )
-        include_health_notes = st.checkbox("Include optional health notes in downloaded reports", value=False)
+with profile_tab:
+    st.subheader("Golfer profile and four-week practice plan")
+    st.caption("Profile information is kept only in the current Streamlit session unless you download it.")
 
-    consent = st.checkbox(
-        "I consent to processing this video and profile in the current app session.",
-        value=(source_mode == "Synthetic demo"),
-    )
-    profile["consent_to_process_video"] = bool(consent)
-
-    analyze_clicked = st.button("Analyze swing", type="primary", use_container_width=True)
-    if analyze_clicked:
-        if not consent:
-            st.error("Consent is required before processing a video.")
-        elif source_mode == "Upload my golf video" and uploaded_file is None:
-            st.error("Upload a video before starting the analysis.")
-        else:
-            progress_bar = st.progress(0.0)
-            status_box = st.empty()
-            callback = _progress_callback(progress_bar, status_box)
-            try:
-                workspace = _new_workspace()
-                callback(0.01, "Preparing the analysis workspace")
-                if source_mode == "Synthetic demo":
-                    source_path, records, metadata = create_demo_video(workspace / "synthetic_demo.mp4")
-                    analysis_path = standardize_video(source_path, workspace / "synthetic_demo_h264.mp4")
-                    metadata["source_mode"] = "Synthetic demo"
-                else:
-                    upload_name = _safe_filename(uploaded_file.name)
-                    uploaded_path = workspace / upload_name
-                    uploaded_path.write_bytes(uploaded_file.getvalue())
-                    callback(0.02, "Converting the uploaded video for browser playback")
-                    analysis_path = standardize_video(uploaded_path, workspace / "input_standardized.mp4")
-                    records, metadata = extract_pose_records(
-                        analysis_path,
-                        model_dir=workspace / "models",
-                        max_seconds=float(max_seconds),
-                        frame_stride=int(frame_stride),
-                        progress_callback=callback,
-                    )
-                    metadata["source_mode"] = "Uploaded video"
-                    metadata["original_filename"] = upload_name
-
-                callback(0.68, "Calculating swing metrics and phases")
-                features = build_feature_dataframe(records, expected_samples=int(metadata["expected_samples"]))
-                summary, component_scores = summarize_swing(
-                    features, expected_samples=int(metadata["expected_samples"])
-                )
-                callback(0.70, "Running ML and neural-network architecture demonstrations")
-                model_predictions, model_metrics = predict_demo_models(summary)
-                advice = build_advice(component_scores, summary)
-                practice_plan = build_practice_plan(advice, profile)
-                annotated_path = create_annotated_video(
-                    analysis_path,
-                    workspace / "annotated_golf_swing.mp4",
-                    records,
-                    frame_feature_map(features),
-                    overall_score=float(summary["heuristic_overall_score"]),
-                    frame_stride=int(metadata["frame_stride"]),
-                    progress_callback=callback,
-                )
-
-                state, state_score = weakest_state(component_scores)
-                bandit = st.session_state.get("bandit")
-                if not isinstance(bandit, ContextualBanditCoach):
-                    bandit = ContextualBanditCoach()
-                    st.session_state["bandit"] = bandit
-                recommendation = bandit.recommend(state, epsilon=0.0, seed=42)
-                st.session_state["rl_state"] = state
-                st.session_state["rl_state_score"] = state_score
-                st.session_state["rl_recommendation"] = recommendation
-                st.session_state.setdefault("feedback_log", [])
-
-                st.session_state["analysis_result"] = {
-                    "profile": profile,
-                    "metadata": metadata,
-                    "summary": summary,
-                    "component_scores": component_scores,
-                    "model_predictions": model_predictions,
-                    "model_metrics": model_metrics,
-                    "advice": advice,
-                    "practice_plan": practice_plan,
-                    "features": features,
-                    "source_path": str(analysis_path),
-                    "annotated_path": str(annotated_path),
-                    "include_health_notes": include_health_notes,
-                }
-                callback(1.0, "Analysis complete")
-                status_box.success("Analysis complete. Results and downloads are shown below.")
-            except PoseBackendUnavailable as exc:
-                progress_bar.empty()
-                status_box.empty()
-                st.error(str(exc))
-                st.info("The app itself is running. Use Synthetic demo to verify the full pipeline while checking the Streamlit dependency build log.")
-            except Exception as exc:
-                progress_bar.empty()
-                status_box.empty()
-                st.error(f"Analysis failed: {exc}")
-                with st.expander("Technical details"):
-                    st.code(traceback.format_exc())
-
-    result = st.session_state.get("analysis_result")
-    if result:
-        st.divider()
-        st.header("Analysis results")
-        summary = result["summary"]
-        components = result["component_scores"]
-        predictions = result["model_predictions"]
-        metadata = result["metadata"]
-        features = result["features"]
-
-        score_col, rf_col, nn_col, coverage_col = st.columns(4)
-        score_col.metric("Transparent heuristic", f"{summary['heuristic_overall_score']:.1f}/100")
-        rf_col.metric("Random Forest", f"{predictions['Random Forest prototype']:.1f}/100")
-        nn_col.metric("Deep neural network", f"{predictions['Deep neural network prototype']:.1f}/100")
-        coverage_col.metric("Pose coverage", f"{summary['detection_coverage'] * 100:.0f}%")
-        st.caption("The Random Forest and neural-network values are synthetic-label architecture demonstrations, not validated coaching accuracy.")
-
-        original_col, annotated_col = st.columns(2)
-        with original_col:
-            st.subheader("Input video")
-            st.video(result["source_path"])
-        with annotated_col:
-            st.subheader("Annotated video")
-            st.video(result["annotated_path"])
-
-        chart_col, summary_col = st.columns([1, 1.25])
-        with chart_col:
-            st.subheader("Component scores")
-            component_frame = pd.DataFrame(
-                {"Component": list(components.keys()), "Score": list(components.values())}
-            ).set_index("Component")
-            st.bar_chart(component_frame, y="Score", horizontal=True)
-        with summary_col:
-            st.subheader("Key measurements")
-            display_metrics = pd.DataFrame([
-                ["Address torso tilt", f"{summary['address_torso_tilt_deg']:.1f}°"],
-                ["Address mean knee angle", f"{summary['address_mean_knee_angle_deg']:.1f}°"],
-                ["Maximum shoulder-hip separation", f"{summary['max_shoulder_hip_separation_deg']:.1f}°"],
-                ["Maximum hip sway", f"{summary['max_hip_sway_shoulder_widths']:.2f} shoulder widths"],
-                ["Maximum head motion", f"{summary['max_head_motion_shoulder_widths']:.2f} shoulder widths"],
-                ["Impact mean elbow angle", f"{summary['impact_mean_elbow_angle_deg']:.1f}°"],
-                ["Tempo ratio", f"{summary['tempo_ratio']:.2f}:1"],
-                ["Peak hand speed", f"{summary['peak_hand_speed_shoulder_widths_per_s']:.2f} shoulder widths/s"],
-                ["Pose backend", metadata.get("pose_backend", "Unknown")],
-            ], columns=["Metric", "Value"])
-            st.dataframe(display_metrics, hide_index=True, use_container_width=True)
-
-        st.subheader("Movement signals")
-        signal_tab1, signal_tab2, signal_tab3 = st.tabs(["Joint angles", "Movement", "Phases"])
-        with signal_tab1:
-            st.line_chart(
-                features.set_index("timestamp_s")[[
-                    "left_elbow_angle", "right_elbow_angle", "left_knee_angle", "right_knee_angle"
-                ]]
+    with st.form("profile_form"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            golfer_name = st.text_input("Name", value="Demo Golfer")
+            age = st.number_input("Age", min_value=8, max_value=100, value=18, step=1)
+            gender = st.selectbox(
+                "Gender (optional)",
+                ["Prefer not to say", "Female", "Male", "Non-binary", "Self-described"],
             )
-        with signal_tab2:
-            st.line_chart(
-                features.set_index("timestamp_s")[[
-                    "shoulder_hip_separation_deg",
-                    "hip_sway_shoulder_widths",
-                    "head_motion_shoulder_widths",
-                    "hand_speed_smoothed",
-                ]]
+        with col2:
+            height_cm = st.number_input("Height (cm)", 100.0, 230.0, 175.0, 0.5)
+            weight_kg = st.number_input("Weight (kg)", 25.0, 250.0, 70.0, 0.5)
+            handedness = st.selectbox("Golf handedness", ["Right-handed", "Left-handed"])
+        with col3:
+            experience = st.selectbox("Experience level", ["Beginner", "Intermediate", "Advanced"])
+            activity_days = st.slider("Activity days per week", 0, 7, 3)
+            primary_goal = st.selectbox(
+                "Primary goal",
+                [
+                    "Improve swing consistency",
+                    "Improve balance",
+                    "Improve tempo",
+                    "Improve rotation",
+                    "Improve posture",
+                    "General practice",
+                ],
             )
-        with signal_tab3:
-            st.dataframe(
-                features[["timestamp_s", "phase", "torso_tilt_deg", "hand_speed_smoothed", "pose_visibility"]],
-                hide_index=True,
-                use_container_width=True,
-            )
+        health_notes = st.text_area(
+            "Movement considerations (optional)",
+            placeholder="Only enter information needed to adapt practice. Do not enter private medical records.",
+        )
+        submitted = st.form_submit_button("Generate practice plan", type="primary", use_container_width=True)
 
-        st.subheader("Priority coaching suggestions")
-        st.dataframe(result["advice"], hide_index=True, use_container_width=True)
-        st.subheader("Personalized four-week practice plan")
-        st.dataframe(result["practice_plan"], hide_index=True, use_container_width=True)
+    if submitted:
+        bmi = float(weight_kg) / math.pow(float(height_cm) / 100.0, 2)
+        profile = {
+            "name": golfer_name.strip() or "Golfer",
+            "age": int(age),
+            "gender": gender,
+            "height_cm": float(height_cm),
+            "weight_kg": float(weight_kg),
+            "bmi": round(bmi, 2),
+            "handedness": handedness,
+            "experience": experience,
+            "activity_days": int(activity_days),
+            "primary_goal": primary_goal,
+            "movement_considerations": health_notes.strip(),
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "author": AUTHOR,
+            "mentor": MENTOR,
+        }
+        st.session_state.profile_report = {
+            "profile": profile,
+            "practice_plan": _build_practice_plan(profile),
+            "disclaimer": "Educational planning only; not medical or professional golf advice.",
+        }
 
-        st.subheader("Download results")
-        bandit = st.session_state.get("bandit") or ContextualBanditCoach()
-        report_html = build_report_html(
-            result["profile"],
-            result["metadata"],
-            result["summary"],
-            result["component_scores"],
-            result["model_predictions"],
-            result["advice"],
-            result["practice_plan"],
-            include_health_notes=bool(result["include_health_notes"]),
-        )
-        package_bytes = build_download_package(
-            result["profile"],
-            result["metadata"],
-            result["summary"],
-            result["component_scores"],
-            result["model_predictions"],
-            result["model_metrics"],
-            result["advice"],
-            result["practice_plan"],
-            result["features"],
-            bandit.payload(),
-            Path(result["annotated_path"]),
-            include_health_notes=bool(result["include_health_notes"]),
-        )
-        dl1, dl2, dl3, dl4 = st.columns(4)
-        dl1.download_button(
-            "Download full ZIP",
-            package_bytes,
-            file_name="Isaiah_Goh_AI_Golf_Coach_Analysis.zip",
-            mime="application/zip",
-            use_container_width=True,
-        )
-        dl2.download_button(
-            "Download HTML report",
-            report_html.encode("utf-8"),
-            file_name="golf_coach_report.html",
-            mime="text/html",
-            use_container_width=True,
-        )
-        dl3.download_button(
-            "Download features CSV",
-            result["features"].to_csv(index=False).encode("utf-8"),
-            file_name="swing_frame_features.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-        dl4.download_button(
-            "Download summary JSON",
-            json.dumps(
-                {
-                    "author": AUTHOR,
-                    "mentor": MENTOR,
-                    "summary": result["summary"],
-                    "component_scores": result["component_scores"],
-                    "model_predictions": result["model_predictions"],
-                },
-                indent=2,
-            ).encode("utf-8"),
-            file_name="golf_coach_summary.json",
+    report = st.session_state.get("profile_report")
+    if report:
+        profile = report["profile"]
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("BMI", f"{profile['bmi']:.1f}")
+        c2.metric("Experience", profile["experience"])
+        c3.metric("Weekly activity", f"{profile['activity_days']} days")
+        c4.metric("Primary goal", profile["primary_goal"])
+        st.caption("BMI is displayed only as general profile context and is not used for diagnosis.")
+
+        for item in report["practice_plan"]:
+            with st.expander(item["week"], expanded=True):
+                st.markdown(f"**Focus:** {item['focus']}")
+                st.write(item["plan"])
+
+        report_bytes = json.dumps(report, indent=2, ensure_ascii=False).encode("utf-8")
+        st.download_button(
+            "Download profile and practice plan (JSON)",
+            data=report_bytes,
+            file_name="isaiah_goh_ai_golf_coach_practice_plan.json",
             mime="application/json",
             use_container_width=True,
         )
 
 with feedback_tab:
-    st.header("Feedback-based reinforcement learning")
+    st.subheader("Feedback-driven recommendation learning")
     st.write(
-        "The MVP uses a contextual bandit. The current weak component is the context, a drill is the action, "
-        "and the user's 1–5 rating becomes a reward. The update changes future drill selection for that context."
+        "This lightweight contextual-bandit demonstration updates the estimated usefulness of each drill "
+        "from thumbs-up and thumbs-down feedback during the current app session."
     )
-    result = st.session_state.get("analysis_result")
-    if not result:
-        st.info("Run a swing analysis first so the app can select a weakness and a drill.")
-    else:
-        bandit = st.session_state.get("bandit")
-        if not isinstance(bandit, ContextualBanditCoach):
-            bandit = ContextualBanditCoach()
-            st.session_state["bandit"] = bandit
-        state = st.session_state["rl_state"]
-        recommendation = st.session_state["rl_recommendation"]
-        state_score = float(st.session_state["rl_state_score"])
-        st.markdown(
-            f"""
-<div class="good"><strong>Current practice context:</strong> {state} ({state_score:.1f}/100)<br><strong>Recommended drill:</strong> {recommendation}</div>
-""",
-            unsafe_allow_html=True,
-        )
-        rating = st.slider("After trying the drill, rate its usefulness", 1, 5, 4)
-        comment = st.text_input("Optional feedback note")
-        if st.button("Submit feedback and update policy", type="primary"):
-            reward = bandit.update(state, recommendation, rating)
-            log = st.session_state.setdefault("feedback_log", [])
-            log.append({
-                "state": state,
-                "action": recommendation,
-                "rating": rating,
-                "reward": reward,
-                "comment": comment.strip(),
-            })
-            st.session_state["rl_recommendation"] = bandit.recommend(state, epsilon=0.12)
-            st.success(f"Policy updated with reward {reward:+.1f}. The next recommendation is {st.session_state['rl_recommendation']}.")
-        st.download_button(
-            "Download RL policy JSON",
-            bandit.json_bytes(),
-            file_name="rl_contextual_bandit_policy.json",
-            mime="application/json",
-        )
-        if st.session_state.get("feedback_log"):
-            st.subheader("Session feedback log")
-            st.dataframe(pd.DataFrame(st.session_state["feedback_log"]), hide_index=True, use_container_width=True)
+    _initialize_feedback_state()
+    actions = sorted(
+        st.session_state.bandit_values,
+        key=lambda item: st.session_state.bandit_values[item],
+        reverse=True,
+    )
+    for action in actions:
+        col_text, col_up, col_down = st.columns([5, 1, 1])
+        with col_text:
+            value = st.session_state.bandit_values[action]
+            count = st.session_state.bandit_counts[action]
+            st.markdown(f"**{action}** — learned preference score: `{value:.2f}` from `{count}` rating(s)")
+            st.progress(value)
+        with col_up:
+            if st.button("👍", key=f"up_{action}", help=f"Helpful: {action}"):
+                _update_feedback(action, 1.0)
+                st.rerun()
+        with col_down:
+            if st.button("👎", key=f"down_{action}", help=f"Not helpful: {action}"):
+                _update_feedback(action, 0.0)
+                st.rerun()
+
+    st.divider()
+    st.caption(
+        "This is an interpretable learning demonstration, not autonomous retraining of a production model. "
+        "Session values reset when the app session ends."
+    )
 
 with about_tab:
-    st.header("Project architecture")
-    st.markdown(
-        f"""
-**Author:** {AUTHOR}  
-**Mentor:** {MENTOR}
-
-The repository implements four connected layers:
-
-1. **Computer vision:** MediaPipe estimates 33 body landmarks from sampled video frames and OpenCV creates an annotated video.
-2. **Interpretable biomechanics:** Geometry functions calculate joint angles, torso tilt, relative shoulder/hip rotation, sway, head motion, hand speed, tempo, and swing phases.
-3. **Machine learning and deep neural network:** A Random Forest and a three-hidden-layer MLP demonstrate predictive architecture using transparent synthetic labels. They are placeholders for future consented, coach-labeled data.
-4. **Reinforcement learning:** A contextual bandit learns which practice drill users rate most positively for each detected weakness.
-
-The repository also includes the original Colab notebook, a model card, tests, a GitHub Actions workflow, Streamlit configuration, and deployment instructions.
+    st.subheader("Architecture and deployment")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("#### Fast cloud architecture")
+        st.markdown(
+            """
+- **Streamlit server:** UI, profile forms, practice-plan generation, downloads, and feedback demonstration.
+- **Browser AI:** MediaPipe Pose Landmarker processes selected video frames locally in the visitor's browser.
+- **Fallback engine:** native browser pixel-motion analysis runs when the external pose model cannot load.
+- **No server video upload:** the embedded studio uses a browser file picker instead of a Python file uploader.
+- **No heavy build:** the repository intentionally omits `mediapipe`, OpenCV, FFmpeg, PyTorch, and scikit-learn from the cloud environment.
 """
-    )
-    st.subheader("Responsible-use boundaries")
+        )
+    with col2:
+        st.markdown("#### AI components represented")
+        st.markdown(
+            """
+- 33-landmark body-pose extraction when the browser model is available
+- Joint angles, head movement, hip sway, tempo, rotation, and movement smoothness
+- Transparent rule-based scoring plus a small fixed-weight neural-network demonstration
+- Swing-phase segmentation: address, backswing, top, downswing, impact, follow-through
+- Feedback-ranked coaching suggestions using an incremental contextual-bandit update
+- Four-week practice-plan generator and downloadable JSON/CSV reports
+"""
+        )
+
     st.markdown(
-        "- Do not use the score for medical diagnosis, injury prediction, rehabilitation, selection, or certification.\n"
-        "- Do not commit uploaded user videos or sensitive health notes to GitHub.\n"
-        "- Replace synthetic model labels with de-identified, consented, coach-labeled data before evaluating real accuracy.\n"
-        "- Evaluate camera-view robustness, demographic fairness, ability-level performance, and coach agreement before production use."
+        """
+<div class="notice"><strong>Browser compatibility:</strong> MP4/H.264 and WebM are the most reliable upload formats. Some browsers cannot decode WMV, AVI, or HEVC directly. For those files, convert to MP4/H.264 before using the fast cloud studio.</div>
+""",
+        unsafe_allow_html=True,
     )
 
-st.markdown(
-    f"<p class='small' style='text-align:center;margin-top:2rem'>Created by {AUTHOR} under the mentorship of {MENTOR}.</p>",
-    unsafe_allow_html=True,
-)
+    notebook_path = ROOT / "notebooks" / "Isaiah_Goh_AI_Golf_Coach_Colab.ipynb"
+    if notebook_path.exists():
+        st.download_button(
+            "Download the original Colab notebook",
+            data=notebook_path.read_bytes(),
+            file_name=notebook_path.name,
+            mime="application/x-ipynb+json",
+            use_container_width=True,
+        )
+
+    st.markdown("#### Credits")
+    st.write(f"**Author:** {AUTHOR}")
+    st.write(f"**Mentor:** {MENTOR}")
+    st.caption("MIT-licensed repository. Third-party browser AI libraries retain their own licenses.")

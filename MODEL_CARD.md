@@ -1,35 +1,54 @@
-# AI Golf Coach Model Card
+# Model Card — AI Golf Coach Educational Prototype
 
-**Author:** Isaiah Goh  
-**Mentor:** Dr. Qingyang Xiao
+## Overview
+
+The app uses MediaPipe Pose Landmarker in the visitor's browser to estimate 33 body landmarks from sampled video frames. It derives 2D geometric features and creates educational swing metrics. When the model cannot load or pose coverage is too low, the app uses a native motion-centroid fallback.
 
 ## Intended use
 
-This repository is an educational prototype demonstrating video pose estimation, interpretable biomechanics features, supervised machine learning, a multi-layer neural network, feedback-based recommendations, and downloadable reports.
+- Student AI/ML demonstration
+- Golf movement visualization
+- Practice reflection and repeatable camera-based comparison
+- Exploration of supervised features, neural-network architecture concepts, and feedback learning
 
 ## Not intended for
 
-- Medical diagnosis, rehabilitation, or injury-risk prediction
-- Certified coaching decisions or player selection
-- Autonomous high-stakes recommendations
-- Claims of real-world model accuracy without additional validation
+- Medical diagnosis or rehabilitation decisions
+- Injury prediction
+- Professional certification of golf technique
+- Autonomous high-stakes decisions
+- Comparing people for employment, insurance, education, or eligibility
 
-## Model components
+## Inputs
 
-1. **MediaPipe pose estimation:** estimates up to 33 body landmarks from sampled frames.
-2. **Transparent scoring:** uses camera-dependent geometric indicators such as joint angles, torso tilt, sway, rotation, hand speed, and tempo.
-3. **Random Forest:** trained on synthetic feature rows and transparent synthetic labels to demonstrate supervised-learning integration.
-4. **Deep neural network:** a three-hidden-layer MLP trained on the same synthetic architecture-demonstration dataset.
-5. **Contextual bandit:** updates drill preferences from a user's 1–5 usefulness rating.
+- Browser-decodable golf video
+- Optional golfer name, handedness, experience level, and practice goal
+- Optional Streamlit profile information in a separate session form
 
-## Data limitations
+## Outputs
 
-The repository does not include a coach-labeled golf dataset. Synthetic scores must not be reported as validated golf-coaching accuracy. A production study should use consented, de-identified data, multiple coaches, subject-level train/test separation, diverse users and camera views, and preregistered outcome metrics.
+- Estimated pose landmarks or motion-centroid data
+- 2D elbow and knee angles
+- Torso tilt, shoulder/hip orientation difference, head motion, hip sway, hand-speed proxy
+- Swing phases and educational scores
+- Coaching suggestions and a four-week practice direction
+- JSON/CSV/PNG/WebM downloads
 
-## Technical limitations
+## AI methods represented
 
-- Single-camera 2D pose is sensitive to viewpoint and occlusion.
-- The clubhead, ball flight, pressure, and ground-reaction forces are not tracked.
-- The swing phase detector is heuristic.
-- Streamlit Community Cloud has shared resource constraints, so videos are truncated and frame-sampled.
-- Feedback learning can encode user preference bias.
+1. **Feature engineering / supervised-ML preparation:** frame-level landmarks and derived features can form a labeled training table.
+2. **Neural-network demonstration:** the app includes a small fixed-weight feed-forward calculation to illustrate a multi-layer scoring architecture. It is not a trained professional model.
+3. **Reinforcement-learning concept:** thumbs-up/down feedback updates a contextual-bandit preference score in local browser storage or Streamlit session state.
+
+## Limitations and risks
+
+- 2D angles are sensitive to camera viewpoint and perspective.
+- Occlusion, loose clothing, low light, multiple people, or cropped limbs can reduce accuracy.
+- Golf clubs are not explicitly detected.
+- The synthetic score thresholds are educational heuristics, not validated coaching standards.
+- Motion fallback cannot identify body joints and reports only motion proxies.
+- Feedback may personalize suggestion ordering but does not prove that a drill is safe or effective.
+
+## Human oversight
+
+Users should review recommendations critically and consult a qualified golf instructor for technique changes. Stop any activity that causes pain and consult an appropriate healthcare professional when needed.
